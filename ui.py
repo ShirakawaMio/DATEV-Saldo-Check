@@ -17,6 +17,17 @@ from core import (
 )
 
 
+def short_source_label(source):
+    if isinstance(source, tuple):
+        archive_path, member_name = source
+        return f"{archive_path.name}::{Path(member_name).name}"
+
+    source_path = Path(source)
+    if source_path.parent.name:
+        return f"{source_path.parent.name}/{source_path.name}"
+    return source_path.name
+
+
 def run_gui():
     try:
         import tkinter as tk
@@ -90,7 +101,7 @@ def run_gui():
 
         status_var.set(
             f"{len(files)} Datei(en) gefunden; Spalten aus "
-            f"{source_label(files[0])} geladen."
+            f"{short_source_label(files[0])} geladen."
         )
 
     def choose_file():
@@ -274,10 +285,13 @@ def run_gui():
 
     footer = tk.Frame(root)
     footer.grid(row=4, column=0, sticky="ew", padx=8, pady=8)
-    tk.Label(footer, textvariable=status_var, anchor="w").pack(
-        side="left", fill="x", expand=True
+    footer.columnconfigure(0, weight=1)
+    tk.Label(footer, textvariable=status_var, anchor="w", width=1).grid(
+        row=0, column=0, sticky="ew", padx=(0, 8)
     )
-    tk.Button(footer, text="Prüfen", command=run_check).pack(side="right")
+    tk.Button(footer, text="Prüfen", command=run_check).grid(
+        row=0, column=1, sticky="e"
+    )
 
     root.mainloop()
     return 0

@@ -20,6 +20,7 @@ from core import (  # noqa: E402
     parse_amount,
     sum_saldos,
 )
+from ui import short_source_label  # noqa: E402
 
 
 def write_csv(path, headers, rows):
@@ -146,6 +147,20 @@ def test_zip_csv_discovery_and_calculation():
     )
 
 
+def test_short_source_label():
+    regular_source = Path("exports") / "2026-06" / "bookings.csv"
+    zip_source = (
+        Path("exports") / "Amazon_FR_2026-06.zip",
+        "nested/EXTF_Buchungen.csv",
+    )
+
+    assert short_source_label(regular_source) == "2026-06/bookings.csv"
+    assert (
+        short_source_label(zip_source)
+        == "Amazon_FR_2026-06.zip::EXTF_Buchungen.csv"
+    )
+
+
 def test_sum_saldos():
     results = [
         ("1200", Decimal("100.00"), Decimal("40.00"), 1, 1),
@@ -234,6 +249,7 @@ def main():
         test_custom_column_names,
         test_recursive_csv_discovery,
         test_zip_csv_discovery_and_calculation,
+        test_short_source_label,
         test_sum_saldos,
         test_empty_counteraccount_is_rejected,
         test_empty_account_is_rejected,
