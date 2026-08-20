@@ -47,9 +47,10 @@ This file records the project assumptions, constraints, and operational knowledg
 
 ## Input and GUI behavior
 
-- A command-line input can be one file or a directory.
-- Directory input is recursive and processes files whose suffix is `.csv`, case-insensitively.
-- The GUI can select a file or directory, load column names from the first CSV, and run the same calculation for all discovered CSV files.
+- A command-line input can be one CSV file, a ZIP archive, or a directory.
+- Directory input is recursive and processes `.csv` files plus CSV members of `.zip` archives, case-insensitively.
+- ZIP members are read directly without extraction and are displayed as `archive.zip::member.csv`.
+- The GUI can select a CSV, ZIP archive, or directory, load column names from the first CSV, and run the same calculation for all discovered CSV files.
 - The default local input is under `data/`; it is not expected to exist in a clean clone.
 
 ## Packaging

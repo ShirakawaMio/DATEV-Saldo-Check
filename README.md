@@ -14,7 +14,7 @@ Ein einfaches Programm zur Prüfung, ob DATEV-Buchungsstapel ausgeglichen sind.
 ## Anleitung
 
 1. Laden Sie das Programm für Ihr Betriebssystem herunter.
-2. Öffnen Sie das Programm und wählen Sie eine CSV-Datei oder einen Ordner mit mehreren CSV-Dateien aus.
+2. Öffnen Sie das Programm und wählen Sie eine CSV-Datei, ein ZIP-Archiv oder einen Ordner mit mehreren CSV-Dateien aus.
 3. Falls eine Spaltenauswahl angezeigt wird, prüfen Sie die Betrags-, S/H-, Konto- und Gegenkonto-Spalte.
 4. Klicken Sie auf „Prüfen“.
 
@@ -35,7 +35,8 @@ Die Dateien werden nur lokal gelesen. Buchungsdaten werden nicht automatisch hoc
 
 ## Unterstützte Dateien
 
-Das Programm ist für DATEV-Buchungsstapel-CSV-Dateien vorgesehen. Beträge müssen
+Das Programm ist für DATEV-Buchungsstapel-CSV-Dateien und ZIP-Archive mit solchen
+CSV-Dateien vorgesehen. Beträge müssen
 dem DATEV-Format entsprechen: positiv, ungleich null, ohne Tausendertrennzeichen
 und mit Komma sowie zwei Nachkommastellen. Bei abweichenden Spaltennamen können
 die passenden Spalten im Programm ausgewählt werden. Wenn die Datei trotzdem

@@ -7,9 +7,16 @@
 import argparse
 import csv
 import sys
+import zipfile
 from pathlib import Path
 
-from core import calculate_saldo, find_csv_files, sum_saldos
+from core import (
+    calculate_saldo,
+    find_csv_files,
+    is_collection_input,
+    source_label,
+    sum_saldos,
+)
 
 
 DEFAULT_INPUT = Path(__file__).parent / "data" / (
@@ -30,7 +37,8 @@ def build_parser():
         type=Path,
         default=DEFAULT_INPUT,
         help=(
-            "DATEV-CSV-Datei oder Ordner; Ordner werden rekursiv durchsucht "
+            "DATEV-CSV-Datei, ZIP-Archiv oder Ordner; Ordner werden rekursiv "
+            "durchsucht "
             f"(Standard: {DEFAULT_INPUT.name})"
         ),
     )
@@ -56,7 +64,7 @@ def print_result(path, result):
         h_count,
     ) = result
     saldo = account_s_total - account_h_total
-    print(f"Datei: {path}")
+    print(f"Datei: {source_label(path)}")
     print(f"Konto: {account}")
     print(
         f"Konto-Summe S ({s_count} Buchungen): "
@@ -86,7 +94,7 @@ def main():
 
     try:
         files = find_csv_files(args.input_path)
-    except OSError as exc:
+    except (OSError, zipfile.BadZipFile) as exc:
         print(f"Fehler: {exc}", file=sys.stderr)
         return 2
 
@@ -96,15 +104,21 @@ def main():
 
     has_error = False
     has_imbalance = False
-    is_folder = args.input_path.is_dir()
+    is_collection = is_collection_input(args.input_path)
     results = []
     for index, path in enumerate(files):
         if index:
             print()
         try:
             result = calculate_saldo(path, encoding=args.encoding)
-        except (OSError, UnicodeError, csv.Error, ValueError) as exc:
-            print(f"Fehler in {path}: {exc}", file=sys.stderr)
+        except (
+            OSError,
+            UnicodeError,
+            csv.Error,
+            ValueError,
+            zipfile.BadZipFile,
+        ) as exc:
+            print(f"Fehler in {source_label(path)}: {exc}", file=sys.stderr)
             has_error = True
             continue
 
@@ -112,7 +126,7 @@ def main():
         if not print_result(path, result):
             has_imbalance = True
 
-    if is_folder:
+    if is_collection:
         total_saldo = sum_saldos(results)
         print()
         print(f"Summe aller Saldo: {total_saldo:.2f} EUR")

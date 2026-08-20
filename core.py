@@ -1,5 +1,8 @@
 import csv
+import io
 import re
+import zipfile
+from contextlib import contextmanager
 from decimal import Decimal
 
 
@@ -22,8 +25,26 @@ def parse_amount(raw_value, *, line_number):
     return Decimal(value.replace(",", "."))
 
 
-def read_header(path, encoding):
-    with path.open("r", encoding=encoding, newline="") as csv_file:
+@contextmanager
+def open_csv_source(source, encoding):
+    if isinstance(source, tuple):
+        archive_path, member_name = source
+        with zipfile.ZipFile(archive_path) as archive:
+            with archive.open(member_name, "r") as binary_file:
+                with io.TextIOWrapper(
+                    binary_file,
+                    encoding=encoding,
+                    newline="",
+                ) as csv_file:
+                    yield csv_file
+        return
+
+    with source.open("r", encoding=encoding, newline="") as csv_file:
+        yield csv_file
+
+
+def read_header(source, encoding):
+    with open_csv_source(source, encoding) as csv_file:
         reader = csv.reader(csv_file, delimiter=";", strict=True)
         try:
             next(reader)  # DATEV EXTF metadata row
@@ -35,7 +56,7 @@ def read_header(path, encoding):
 
 
 def calculate_saldo(
-    path,
+    source,
     *,
     encoding,
     amount_column=AMOUNT_COLUMN,
@@ -49,7 +70,7 @@ def calculate_saldo(
     counts = {"S": 0, "H": 0}
     accounts = set()
 
-    with path.open("r", encoding=encoding, newline="") as csv_file:
+    with open_csv_source(source, encoding) as csv_file:
         reader = csv.reader(csv_file, delimiter=";", strict=True)
 
         try:
@@ -128,14 +149,40 @@ def calculate_saldo(
 
 def find_csv_files(input_path):
     if input_path.is_file():
+        if input_path.suffix.lower() == ".zip":
+            return find_zip_csv_files(input_path)
         return [input_path]
     if input_path.is_dir():
-        return sorted(
-            path
-            for path in input_path.rglob("*")
-            if path.is_file() and path.suffix.lower() == ".csv"
-        )
+        sources = []
+        for path in sorted(input_path.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() == ".csv":
+                sources.append(path)
+            elif path.suffix.lower() == ".zip":
+                sources.extend(find_zip_csv_files(path))
+        return sources
     raise FileNotFoundError(f"Datei oder Ordner nicht gefunden: {input_path}")
+
+
+def find_zip_csv_files(archive_path):
+    with zipfile.ZipFile(archive_path) as archive:
+        return [
+            (archive_path, info.filename)
+            for info in archive.infolist()
+            if not info.is_dir()
+            and info.filename.lower().endswith(".csv")
+        ]
+
+
+def source_label(source):
+    if isinstance(source, tuple):
+        return f"{source[0]}::{source[1]}"
+    return str(source)
+
+
+def is_collection_input(input_path):
+    return input_path.is_dir() or input_path.suffix.lower() == ".zip"
 
 
 def sum_saldos(results):

@@ -1,5 +1,6 @@
 import csv
 import sys
+import zipfile
 from pathlib import Path
 
 from core import (
@@ -9,7 +10,9 @@ from core import (
     SIDE_COLUMN,
     calculate_saldo,
     find_csv_files,
+    is_collection_input,
     read_header,
+    source_label,
     sum_saldos,
 )
 
@@ -48,7 +51,10 @@ def run_gui():
             raise ValueError("Bitte zuerst eine Datei oder einen Ordner auswählen.")
         files = find_csv_files(Path(raw_path))
         if not files:
-            raise ValueError("Im ausgewählten Ordner wurden keine CSV-Dateien gefunden.")
+            raise ValueError(
+                "Im ausgewählten Ordner oder ZIP-Archiv wurden keine "
+                "CSV-Dateien gefunden."
+            )
         return files
 
     def show_error(message):
@@ -60,7 +66,13 @@ def run_gui():
             files = get_files()
             encoding = encoding_var.get().strip() or "iso-8859-1"
             header = read_header(files[0], encoding)
-        except (OSError, UnicodeError, csv.Error, ValueError) as exc:
+        except (
+            OSError,
+            UnicodeError,
+            csv.Error,
+            ValueError,
+            zipfile.BadZipFile,
+        ) as exc:
             show_error(str(exc))
             return
 
@@ -77,13 +89,18 @@ def run_gui():
                 variable.set(default if default in header else header[0])
 
         status_var.set(
-            f"{len(files)} Datei(en) gefunden; Spalten aus {files[0].name} geladen."
+            f"{len(files)} Datei(en) gefunden; Spalten aus "
+            f"{source_label(files[0])} geladen."
         )
 
     def choose_file():
         selected = filedialog.askopenfilename(
-            title="CSV-Datei auswählen",
-            filetypes=(("CSV-Dateien", "*.csv"), ("Alle Dateien", "*.*")),
+            title="CSV- oder ZIP-Datei auswählen",
+            filetypes=(
+                ("CSV-Dateien", "*.csv"),
+                ("ZIP-Dateien", "*.zip"),
+                ("Alle Dateien", "*.*"),
+            ),
         )
         if selected:
             path_var.set(selected)
@@ -107,14 +124,20 @@ def run_gui():
                 (amount_column, side_column, account_column, counteraccount_column)
             ):
                 raise ValueError("Bitte alle vier Spalten auswählen.")
-        except (OSError, UnicodeError, csv.Error, ValueError) as exc:
+        except (
+            OSError,
+            UnicodeError,
+            csv.Error,
+            ValueError,
+            zipfile.BadZipFile,
+        ) as exc:
             show_error(str(exc))
             return
 
         output.delete("1.0", tk.END)
         has_error = False
         has_imbalance = False
-        is_folder = Path(path_var.get().strip()).is_dir()
+        is_collection = is_collection_input(Path(path_var.get().strip()))
         results = []
 
         for index, path in enumerate(files):
@@ -129,8 +152,17 @@ def run_gui():
                     account_column=account_column,
                     counteraccount_column=counteraccount_column,
                 )
-            except (OSError, UnicodeError, csv.Error, ValueError) as exc:
-                output.insert(tk.END, f"Fehler in {path}: {exc}\n")
+            except (
+                OSError,
+                UnicodeError,
+                csv.Error,
+                ValueError,
+                zipfile.BadZipFile,
+            ) as exc:
+                output.insert(
+                    tk.END,
+                    f"Fehler in {source_label(path)}: {exc}\n",
+                )
                 has_error = True
                 continue
 
@@ -143,7 +175,7 @@ def run_gui():
             ) = result
             saldo = account_s_total - account_h_total
             results.append(result)
-            output.insert(tk.END, f"Datei: {path}\n")
+            output.insert(tk.END, f"Datei: {source_label(path)}\n")
             output.insert(tk.END, f"Konto: {account}\n")
             output.insert(
                 tk.END,
@@ -164,7 +196,7 @@ def run_gui():
                 )
                 has_imbalance = True
 
-        if is_folder:
+        if is_collection:
             total_saldo = sum_saldos(results)
             output.insert(tk.END, "\n")
             output.insert(tk.END, f"Summe aller Saldo: {total_saldo:.2f} EUR\n")

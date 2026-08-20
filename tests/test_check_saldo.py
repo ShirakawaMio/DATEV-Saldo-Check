@@ -1,6 +1,8 @@
+import io
 import csv
 import sys
 import tempfile
+import zipfile
 from decimal import Decimal
 from pathlib import Path
 
@@ -26,6 +28,19 @@ def write_csv(path, headers, rows):
         writer.writerow(["EXTF", 700, 21, "Buchungsstapel", 12])
         writer.writerow(headers)
         writer.writerows(rows)
+
+
+def write_zip(path, headers, rows):
+    csv_buffer = io.StringIO(newline="")
+    writer = csv.writer(csv_buffer, delimiter=";", lineterminator="\n")
+    writer.writerow(["EXTF", 700, 21, "Buchungsstapel", 12])
+    writer.writerow(headers)
+    writer.writerows(rows)
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "nested/inside.csv",
+            csv_buffer.getvalue().encode("iso-8859-1"),
+        )
 
 
 def test_parse_amount():
@@ -104,6 +119,31 @@ def test_recursive_csv_discovery():
 
     assert len(files) == 2
     assert {path.name for path in files} == {"one.csv", "two.CSV"}
+
+
+def test_zip_csv_discovery_and_calculation():
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        archive_path = Path(temporary_directory) / "buchungen.zip"
+        write_zip(
+            archive_path,
+            [AMOUNT_COLUMN, SIDE_COLUMN, ACCOUNT_COLUMN, COUNTERACCOUNT_COLUMN],
+            [
+                ["100,00", "S", "1200", "20000"],
+                ["100,00", "H", "1200", "20000"],
+            ],
+        )
+
+        sources = find_csv_files(archive_path)
+        result = calculate_saldo(sources[0], encoding="iso-8859-1")
+
+    assert sources == [(archive_path, "nested/inside.csv")]
+    assert result == (
+        "1200",
+        Decimal("100.00"),
+        Decimal("100.00"),
+        1,
+        1,
+    )
 
 
 def test_sum_saldos():
@@ -193,6 +233,7 @@ def main():
         test_account_saldo,
         test_custom_column_names,
         test_recursive_csv_discovery,
+        test_zip_csv_discovery_and_calculation,
         test_sum_saldos,
         test_empty_counteraccount_is_rejected,
         test_empty_account_is_rejected,
