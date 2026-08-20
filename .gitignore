@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+build/
+dist/
+.DS_Store
+
+# Business data stays local and must not be published.
+data/*.csv

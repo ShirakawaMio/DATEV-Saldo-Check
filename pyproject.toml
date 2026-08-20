@@ -1,0 +1,15 @@
+[project]
+name = "check-saldo"
+version = "0.1.0"
+description = "DATEV CSV balance checker with a small desktop GUI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+build = [
+    "pyinstaller>=6.11,<7",
+]
+
+[tool.uv]
+package = false
