@@ -16,6 +16,7 @@ from check_saldo import (  # noqa: E402
     calculate_saldo,
     find_csv_files,
     parse_amount,
+    sum_saldos,
 )
 
 
@@ -105,6 +106,16 @@ def test_recursive_csv_discovery():
     assert {path.name for path in files} == {"one.csv", "two.CSV"}
 
 
+def test_sum_saldos():
+    results = [
+        ("1200", Decimal("100.00"), Decimal("40.00"), 1, 1),
+        ("1201", Decimal("25.00"), Decimal("85.00"), 1, 1),
+    ]
+
+    assert sum_saldos(results) == Decimal("0")
+    assert sum_saldos(results[:1]) == Decimal("60.00")
+
+
 def test_empty_counteraccount_is_rejected():
     with tempfile.TemporaryDirectory() as temporary_directory:
         path = Path(temporary_directory) / "invalid.csv"
@@ -182,6 +193,7 @@ def main():
         test_account_saldo,
         test_custom_column_names,
         test_recursive_csv_discovery,
+        test_sum_saldos,
         test_empty_counteraccount_is_rejected,
         test_empty_account_is_rejected,
         test_invalid_side_is_rejected,

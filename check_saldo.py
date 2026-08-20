@@ -181,6 +181,13 @@ def find_csv_files(input_path):
     raise FileNotFoundError(f"Datei oder Ordner nicht gefunden: {input_path}")
 
 
+def sum_saldos(results):
+    total = Decimal("0")
+    for result in results:
+        total += result[1] - result[2]
+    return total
+
+
 def print_result(path, result):
     (
         account,
@@ -310,6 +317,8 @@ def run_gui():
         output.delete("1.0", tk.END)
         has_error = False
         has_imbalance = False
+        is_folder = Path(path_var.get().strip()).is_dir()
+        results = []
 
         for index, path in enumerate(files):
             if index:
@@ -336,6 +345,7 @@ def run_gui():
                 h_count,
             ) = result
             saldo = account_s_total - account_h_total
+            results.append(result)
             output.insert(tk.END, f"Datei: {path}\n")
             output.insert(tk.END, f"Konto: {account}\n")
             output.insert(
@@ -356,6 +366,23 @@ def run_gui():
                     "statt 0.00 EUR\n",
                 )
                 has_imbalance = True
+
+        if is_folder:
+            total_saldo = sum_saldos(results)
+            output.insert(tk.END, "\n")
+            output.insert(tk.END, f"Summe aller Saldo: {total_saldo:.2f} EUR\n")
+            if total_saldo == 0 and not has_error:
+                output.insert(
+                    tk.END,
+                    f"Gesamtprüfung: OK — Summe aller Saldo = "
+                    f"{total_saldo:.2f} EUR\n",
+                )
+            else:
+                output.insert(
+                    tk.END,
+                    f"Gesamtprüfung: FEHLER — Summe aller Saldo = "
+                    f"{total_saldo:.2f} EUR statt 0.00 EUR\n",
+                )
 
         if has_error:
             status_var.set("Fertig: Mindestens eine Datei konnte nicht geprüft werden.")
@@ -443,6 +470,8 @@ def main():
 
     has_error = False
     has_imbalance = False
+    is_folder = args.input_path.is_dir()
+    results = []
     for index, path in enumerate(files):
         if index:
             print()
@@ -453,8 +482,24 @@ def main():
             has_error = True
             continue
 
+        results.append(result)
         if not print_result(path, result):
             has_imbalance = True
+
+    if is_folder:
+        total_saldo = sum_saldos(results)
+        print()
+        print(f"Summe aller Saldo: {total_saldo:.2f} EUR")
+        if total_saldo == 0 and not has_error:
+            print(
+                f"Gesamtprüfung: OK — Summe aller Saldo = "
+                f"{total_saldo:.2f} EUR"
+            )
+        else:
+            print(
+                f"Gesamtprüfung: FEHLER — Summe aller Saldo = "
+                f"{total_saldo:.2f} EUR statt 0.00 EUR"
+            )
 
     if has_error:
         return 2

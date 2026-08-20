@@ -27,6 +27,10 @@ Das Programm prüft die ausgewählten Dateien einzeln und zeigt:
 `Saldo: 0.00 EUR` zusammen mit `Prüfung: OK` bedeutet, dass die Datei die Prüfung bestanden hat.
 Ein Buchungsstapel muss genau ein Konto in der ausgewählten Konto-Spalte enthalten.
 
+Bei der Auswahl eines Ordners wird unter den Einzelergebnissen zusätzlich die
+Summe aller erfolgreich berechneten Saldo angezeigt. `0.00 EUR` bedeutet `OK`,
+ein anderer Betrag bedeutet `FEHLER`.
+
 Die Dateien werden nur lokal gelesen. Buchungsdaten werden nicht automatisch hochgeladen. Bewahren Sie echte Buchungs-CSV-Dateien sicher auf und geben Sie sie nicht an unbefugte Personen weiter.
 
 ## Unterstützte Dateien
