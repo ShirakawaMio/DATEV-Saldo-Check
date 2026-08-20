@@ -1,220 +1,17 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
-# Berechnet Konto-Bewegung und DATEV-Stapel-Saldo aus einer EXTF-CSV-Datei.
-
-import argparse
 import csv
-import re
 import sys
-from decimal import Decimal
 from pathlib import Path
 
-
-AMOUNT_COLUMN = "Umsatz (ohne Soll/Haben-Kz)"
-SIDE_COLUMN = "Soll/Haben-Kennzeichen"
-ACCOUNT_COLUMN = "Konto"
-COUNTERACCOUNT_COLUMN = "Gegenkonto (ohne BU-Schlüssel)"
-DEFAULT_INPUT = Path(__file__).parent / "data" / (
-    "EXTF_Buchungsstapel_Amazon_202607_20260805100008_1.csv"
+from core import (
+    ACCOUNT_COLUMN,
+    AMOUNT_COLUMN,
+    COUNTERACCOUNT_COLUMN,
+    SIDE_COLUMN,
+    calculate_saldo,
+    find_csv_files,
+    read_header,
+    sum_saldos,
 )
-
-
-def parse_amount(raw_value, *, line_number):
-    # DATEV Buchungsstapel requires a positive, non-zero amount with two
-    # decimal places and no thousands separator.
-    value = raw_value.strip()
-    if not re.fullmatch(r"(?!0{1,10},00$)\d{1,10},\d{2}", value):
-        raise ValueError(
-            f"Ungültiger DATEV-Betrag in CSV-Zeile {line_number}: "
-            f"{raw_value!r}"
-        )
-
-    return Decimal(value.replace(",", "."))
-
-
-def read_header(path, encoding):
-    with path.open("r", encoding=encoding, newline="") as csv_file:
-        reader = csv.reader(csv_file, delimiter=";", strict=True)
-        try:
-            next(reader)  # DATEV EXTF metadata row
-            return next(reader)
-        except StopIteration as exc:
-            raise ValueError(
-                "Die CSV-Datei enthält keine Metadaten- und Kopfzeile."
-            ) from exc
-
-
-def calculate_saldo(
-    path,
-    *,
-    encoding,
-    amount_column=AMOUNT_COLUMN,
-    side_column=SIDE_COLUMN,
-    account_column=ACCOUNT_COLUMN,
-    counteraccount_column=COUNTERACCOUNT_COLUMN,
-):
-    # The S/H flag applies to Konto. A file must represent one Konto so its
-    # movement can be checked as S minus H without mixing different accounts.
-    account_totals = {"S": Decimal("0"), "H": Decimal("0")}
-    counts = {"S": 0, "H": 0}
-    accounts = set()
-
-    with path.open("r", encoding=encoding, newline="") as csv_file:
-        reader = csv.reader(csv_file, delimiter=";", strict=True)
-
-        try:
-            next(reader)  # DATEV EXTF metadata row
-            header = next(reader)
-        except StopIteration as exc:
-            raise ValueError("Die CSV-Datei enthält keine Metadaten- und Kopfzeile.") from exc
-
-        missing_columns = [
-            column
-            for column in (
-                amount_column,
-                side_column,
-                account_column,
-                counteraccount_column,
-            )
-            if column not in header
-        ]
-        if missing_columns:
-            raise ValueError(f"Fehlende Spalten: {', '.join(missing_columns)}")
-
-        amount_index = header.index(amount_column)
-        side_index = header.index(side_column)
-        account_index = header.index(account_column)
-        counteraccount_index = header.index(counteraccount_column)
-        required_index = max(
-            amount_index,
-            side_index,
-            account_index,
-            counteraccount_index,
-        )
-
-        for line_number, row in enumerate(reader, start=3):
-            if not row or not any(cell.strip() for cell in row):
-                continue
-            if len(row) <= required_index:
-                raise ValueError(f"Zu wenige Spalten in CSV-Zeile {line_number}.")
-
-            side = row[side_index].strip()
-            if side not in account_totals:
-                raise ValueError(
-                    f"Ungültiges Soll/Haben-Kennzeichen in CSV-Zeile "
-                    f"{line_number}: {row[side_index]!r}"
-                )
-
-            account = row[account_index].strip()
-            if not account:
-                raise ValueError(f"Leeres Konto in CSV-Zeile {line_number}.")
-
-            if not row[counteraccount_index].strip():
-                raise ValueError(
-                    f"Leeres Gegenkonto in CSV-Zeile {line_number}."
-                )
-
-            amount = parse_amount(row[amount_index], line_number=line_number)
-            accounts.add(account)
-            account_totals[side] += amount
-            counts[side] += 1
-
-    if not accounts:
-        raise ValueError("Die CSV-Datei enthält keine Buchungen.")
-    if len(accounts) != 1:
-        raise ValueError(
-            "Die CSV-Datei enthält mehrere Konten; "
-            "ein gemeinsamer Saldo wäre nicht eindeutig."
-        )
-
-    return (
-        next(iter(accounts)),
-        account_totals["S"],
-        account_totals["H"],
-        counts["S"],
-        counts["H"],
-    )
-
-
-def build_parser():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Berechnet den Saldo eines Kontos in einem DATEV-Buchungsstapel "
-            "als Summe Soll minus Summe Haben."
-        )
-    )
-    parser.add_argument(
-        "input_path",
-        nargs="?",
-        type=Path,
-        default=DEFAULT_INPUT,
-        help=(
-            "DATEV-CSV-Datei oder Ordner; Ordner werden rekursiv durchsucht "
-            f"(Standard: {DEFAULT_INPUT.name})"
-        ),
-    )
-    parser.add_argument(
-        "--encoding",
-        default="iso-8859-1",
-        help="Dateikodierung (Standard: iso-8859-1)",
-    )
-    parser.add_argument(
-        "--gui",
-        action="store_true",
-        help="Einfache grafische Oberfläche zum Auswählen von Pfad und Spalten",
-    )
-    return parser
-
-
-def find_csv_files(input_path):
-    if input_path.is_file():
-        return [input_path]
-    if input_path.is_dir():
-        return sorted(
-            path
-            for path in input_path.rglob("*")
-            if path.is_file() and path.suffix.lower() == ".csv"
-        )
-    raise FileNotFoundError(f"Datei oder Ordner nicht gefunden: {input_path}")
-
-
-def sum_saldos(results):
-    total = Decimal("0")
-    for result in results:
-        total += result[1] - result[2]
-    return total
-
-
-def print_result(path, result):
-    (
-        account,
-        account_s_total,
-        account_h_total,
-        s_count,
-        h_count,
-    ) = result
-    saldo = account_s_total - account_h_total
-    print(f"Datei: {path}")
-    print(f"Konto: {account}")
-    print(
-        f"Konto-Summe S ({s_count} Buchungen): "
-        f"{account_s_total:.2f} EUR"
-    )
-    print(
-        f"Konto-Summe H ({h_count} Buchungen): "
-        f"{account_h_total:.2f} EUR"
-    )
-    print(f"Saldo (S - H): {saldo:.2f} EUR")
-
-    if saldo == 0:
-        print(f"Prüfung: OK — Saldo = {saldo:.2f} EUR")
-        return True
-
-    print(f"Prüfung: FEHLER — Saldo = {saldo:.2f} EUR statt 0.00 EUR")
-    return False
 
 
 def run_gui():
@@ -445,68 +242,14 @@ def run_gui():
 
     footer = tk.Frame(root)
     footer.grid(row=4, column=0, sticky="ew", padx=8, pady=8)
-    tk.Label(footer, textvariable=status_var, anchor="w").pack(side="left", fill="x", expand=True)
+    tk.Label(footer, textvariable=status_var, anchor="w").pack(
+        side="left", fill="x", expand=True
+    )
     tk.Button(footer, text="Prüfen", command=run_check).pack(side="right")
 
     root.mainloop()
     return 0
 
 
-def main():
-    args = build_parser().parse_args()
-
-    if args.gui:
-        return run_gui()
-
-    try:
-        files = find_csv_files(args.input_path)
-    except OSError as exc:
-        print(f"Fehler: {exc}", file=sys.stderr)
-        return 2
-
-    if not files:
-        print(f"Fehler: Keine CSV-Dateien gefunden: {args.input_path}", file=sys.stderr)
-        return 2
-
-    has_error = False
-    has_imbalance = False
-    is_folder = args.input_path.is_dir()
-    results = []
-    for index, path in enumerate(files):
-        if index:
-            print()
-        try:
-            result = calculate_saldo(path, encoding=args.encoding)
-        except (OSError, UnicodeError, csv.Error, ValueError) as exc:
-            print(f"Fehler in {path}: {exc}", file=sys.stderr)
-            has_error = True
-            continue
-
-        results.append(result)
-        if not print_result(path, result):
-            has_imbalance = True
-
-    if is_folder:
-        total_saldo = sum_saldos(results)
-        print()
-        print(f"Summe aller Saldo: {total_saldo:.2f} EUR")
-        if total_saldo == 0 and not has_error:
-            print(
-                f"Gesamtprüfung: OK — Summe aller Saldo = "
-                f"{total_saldo:.2f} EUR"
-            )
-        else:
-            print(
-                f"Gesamtprüfung: FEHLER — Summe aller Saldo = "
-                f"{total_saldo:.2f} EUR statt 0.00 EUR"
-            )
-
-    if has_error:
-        return 2
-    if has_imbalance:
-        return 1
-    return 0
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_gui())

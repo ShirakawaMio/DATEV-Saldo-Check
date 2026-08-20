@@ -4,8 +4,11 @@ This file records the project assumptions, constraints, and operational knowledg
 
 ## Scope
 
-- `check_saldo.py` is the source of truth for DATEV CSV balance checking.
-- `check_saldo_gui.py` is a thin GUI entry point that calls `run_gui()`.
+- `core.py` is the source of truth for DATEV CSV parsing, validation, balance
+  calculation, file discovery, and folder saldo aggregation.
+- `ui.py` contains Tkinter-specific presentation and the GUI entry point.
+- `main.py` contains CLI argument handling, terminal output, exit codes, and
+  lazy GUI dispatch for `--gui`.
 - `data/` contains local business CSVs used during development. They are intentionally ignored by Git.
 - Tests use generated temporary CSVs and must not depend on private business data.
 
@@ -51,8 +54,8 @@ This file records the project assumptions, constraints, and operational knowledg
 
 ## Packaging
 
-- The GUI release entry point is `check_saldo_gui.py`.
-- The CLI release entry point is `check_saldo.py`.
+- The GUI release entry point is `ui.py`.
+- The CLI release entry point is `main.py`.
 - `build_release.py` invokes PyInstaller through the Python environment created by `uv`.
 - macOS releases support Apple Silicon only and use PyInstaller `arm64` on the
   GitHub-hosted `macos-15` runner.
@@ -73,8 +76,8 @@ From this directory:
 
 ```text
 uv run python tests/test_check_saldo.py
-uv run check_saldo.py data
-uv run check_saldo.py --gui
+uv run main.py data
+uv run main.py --gui
 uv run --group build python build_release.py --target gui
 ```
 

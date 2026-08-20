@@ -15,7 +15,7 @@ MACOS_ARCH = "arm64"
 def build_target(target):
     is_gui = target == "gui"
     name = "check-saldo-gui" if is_gui else "check-saldo"
-    entrypoint = ROOT / ("check_saldo_gui.py" if is_gui else "check_saldo.py")
+    entrypoint = ROOT / ("ui.py" if is_gui else "main.py")
     workpath = BUILD / name
 
     command = [

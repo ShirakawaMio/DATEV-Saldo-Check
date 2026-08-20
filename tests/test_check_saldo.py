@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from check_saldo import (  # noqa: E402
+from core import (  # noqa: E402
     ACCOUNT_COLUMN,
     AMOUNT_COLUMN,
     COUNTERACCOUNT_COLUMN,
