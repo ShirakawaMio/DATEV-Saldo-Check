@@ -14,7 +14,9 @@ from core import (  # noqa: E402
     ACCOUNT_COLUMN,
     AMOUNT_COLUMN,
     COUNTERACCOUNT_COLUMN,
+    DOCUMENT_DATE_COLUMN,
     SIDE_COLUMN,
+    analyze_saldo,
     calculate_saldo,
     find_csv_files,
     parse_amount,
@@ -161,6 +163,43 @@ def test_short_source_label():
     )
 
 
+def test_counteraccount_entries():
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        path = Path(temporary_directory) / "counteraccount.csv"
+        write_csv(
+            path,
+            [
+                AMOUNT_COLUMN,
+                SIDE_COLUMN,
+                ACCOUNT_COLUMN,
+                COUNTERACCOUNT_COLUMN,
+                DOCUMENT_DATE_COLUMN,
+            ],
+            [
+                ["100,00", "S", "1200", "1360", "01082026"],
+                ["40,50", "H", "1200", "1360", "02082026"],
+                ["10,00", "H", "1200", "20000", "03082026"],
+            ],
+        )
+
+        result = analyze_saldo(path, encoding="iso-8859-1")
+        custom_result = analyze_saldo(
+            path,
+            encoding="iso-8859-1",
+            target_counteraccount="20000",
+        )
+
+    assert [
+        (entry.document_date, entry.amount)
+        for entry in result.counteraccount_entries
+    ] == [
+        ("01082026", Decimal("100.00")),
+        ("02082026", Decimal("40.50")),
+    ]
+    assert [
+        (entry.document_date, entry.amount)
+        for entry in custom_result.counteraccount_entries
+    ] == [("03082026", Decimal("10.00"))]
 def test_sum_saldos():
     results = [
         ("1200", Decimal("100.00"), Decimal("40.00"), 1, 1),
@@ -250,6 +289,7 @@ def main():
         test_recursive_csv_discovery,
         test_zip_csv_discovery_and_calculation,
         test_short_source_label,
+        test_counteraccount_entries,
         test_sum_saldos,
         test_empty_counteraccount_is_rejected,
         test_empty_account_is_rejected,

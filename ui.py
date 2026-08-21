@@ -7,8 +7,10 @@ from core import (
     ACCOUNT_COLUMN,
     AMOUNT_COLUMN,
     COUNTERACCOUNT_COLUMN,
+    DEFAULT_TARGET_COUNTERACCOUNT,
+    DOCUMENT_DATE_COLUMN,
     SIDE_COLUMN,
-    calculate_saldo,
+    analyze_saldo,
     find_csv_files,
     is_collection_input,
     read_header,
@@ -53,6 +55,10 @@ def run_gui():
     side_var = tk.StringVar(value=SIDE_COLUMN)
     account_var = tk.StringVar(value=ACCOUNT_COLUMN)
     counteraccount_var = tk.StringVar(value=COUNTERACCOUNT_COLUMN)
+    document_date_var = tk.StringVar(value=DOCUMENT_DATE_COLUMN)
+    target_counteraccount_var = tk.StringVar(
+        value=DEFAULT_TARGET_COUNTERACCOUNT
+    )
     status_var = tk.StringVar(value="Datei oder Ordner auswählen.")
     column_combos = []
 
@@ -95,6 +101,7 @@ def run_gui():
             (side_var, SIDE_COLUMN),
             (account_var, ACCOUNT_COLUMN),
             (counteraccount_var, COUNTERACCOUNT_COLUMN),
+            (document_date_var, DOCUMENT_DATE_COLUMN),
         ):
             if variable.get() not in header:
                 variable.set(default if default in header else header[0])
@@ -131,10 +138,20 @@ def run_gui():
             side_column = side_var.get().strip()
             account_column = account_var.get().strip()
             counteraccount_column = counteraccount_var.get().strip()
+            document_date_column = document_date_var.get().strip()
+            target_counteraccount = target_counteraccount_var.get().strip()
             if not all(
-                (amount_column, side_column, account_column, counteraccount_column)
+                (
+                    amount_column,
+                    side_column,
+                    account_column,
+                    counteraccount_column,
+                    document_date_column,
+                )
             ):
-                raise ValueError("Bitte alle vier Spalten auswählen.")
+                raise ValueError("Bitte alle fünf Spalten auswählen.")
+            if not target_counteraccount:
+                raise ValueError("Das zu prüfende Gegenkonto darf nicht leer sein.")
         except (
             OSError,
             UnicodeError,
@@ -155,13 +172,15 @@ def run_gui():
             if index:
                 output.insert(tk.END, "\n")
             try:
-                result = calculate_saldo(
+                result = analyze_saldo(
                     path,
                     encoding=encoding,
+                    target_counteraccount=target_counteraccount,
                     amount_column=amount_column,
                     side_column=side_column,
                     account_column=account_column,
                     counteraccount_column=counteraccount_column,
+                    document_date_column=document_date_column,
                 )
             except (
                 OSError,
@@ -177,26 +196,28 @@ def run_gui():
                 has_error = True
                 continue
 
-            (
-                account,
-                account_s_total,
-                account_h_total,
-                s_count,
-                h_count,
-            ) = result
-            saldo = account_s_total - account_h_total
+            saldo = result.saldo
             results.append(result)
             output.insert(tk.END, f"Datei: {source_label(path)}\n")
-            output.insert(tk.END, f"Konto: {account}\n")
+            output.insert(tk.END, f"Konto: {result.account}\n")
             output.insert(
                 tk.END,
-                f"Konto-Summe S ({s_count} Buchungen): {account_s_total:.2f} EUR\n",
+                f"Konto-Summe S ({result.s_count} Buchungen): "
+                f"{result.account_s_total:.2f} EUR\n",
             )
             output.insert(
                 tk.END,
-                f"Konto-Summe H ({h_count} Buchungen): {account_h_total:.2f} EUR\n",
+                f"Konto-Summe H ({result.h_count} Buchungen): "
+                f"{result.account_h_total:.2f} EUR\n",
             )
             output.insert(tk.END, f"Saldo (S - H): {saldo:.2f} EUR\n")
+            output.insert(tk.END, f"Gegenkonto {target_counteraccount}:\n")
+            for entry in result.counteraccount_entries:
+                output.insert(
+                    tk.END,
+                    f"  Belegdatum: {entry.document_date} | "
+                    f"Umsatz: {entry.amount:.2f} EUR\n",
+                )
             if saldo == 0:
                 output.insert(tk.END, f"Prüfung: OK — Saldo = {saldo:.2f} EUR\n")
             else:
@@ -253,6 +274,14 @@ def run_gui():
     tk.Entry(options_frame, textvariable=encoding_var, width=18).grid(
         row=0, column=1, sticky="w", padx=(4, 0)
     )
+    tk.Label(options_frame, text="Gegenkonto prüfen:").grid(
+        row=0, column=2, sticky="w", padx=(20, 0)
+    )
+    tk.Entry(
+        options_frame,
+        textvariable=target_counteraccount_var,
+        width=18,
+    ).grid(row=0, column=3, sticky="w", padx=(4, 0))
 
     columns_frame = tk.LabelFrame(root, text="CSV-Spalten")
     columns_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 8))
@@ -261,6 +290,7 @@ def run_gui():
         ("S/H:", side_var),
         ("Konto:", account_var),
         ("Gegenkonto:", counteraccount_var),
+        ("Belegdatum:", document_date_var),
     )
     for row, (label, variable) in enumerate(column_specs):
         tk.Label(columns_frame, text=label, width=14, anchor="w").grid(
