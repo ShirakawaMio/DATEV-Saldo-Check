@@ -3,6 +3,7 @@ import io
 import re
 import zipfile
 from contextlib import contextmanager
+from dataclasses import dataclass
 from decimal import Decimal
 
 
@@ -10,6 +11,44 @@ AMOUNT_COLUMN = "Umsatz (ohne Soll/Haben-Kz)"
 SIDE_COLUMN = "Soll/Haben-Kennzeichen"
 ACCOUNT_COLUMN = "Konto"
 COUNTERACCOUNT_COLUMN = "Gegenkonto (ohne BU-Schlüssel)"
+DOCUMENT_DATE_COLUMN = "Belegdatum"
+DEFAULT_TARGET_COUNTERACCOUNT = "1360"
+
+
+@dataclass(frozen=True)
+class CounteraccountEntry:
+    document_date: str
+    amount: Decimal
+
+
+@dataclass(frozen=True)
+class SaldoAnalysis:
+    account: str
+    account_s_total: Decimal
+    account_h_total: Decimal
+    s_count: int
+    h_count: int
+    counteraccount_entries: tuple[CounteraccountEntry, ...]
+
+    @property
+    def saldo(self):
+        return self.account_s_total - self.account_h_total
+
+    @property
+    def counteraccount_total(self):
+        return sum(
+            (entry.amount for entry in self.counteraccount_entries),
+            start=Decimal("0"),
+        )
+
+    def saldo_tuple(self):
+        return (
+            self.account,
+            self.account_s_total,
+            self.account_h_total,
+            self.s_count,
+            self.h_count,
+        )
 
 
 def parse_amount(raw_value, *, line_number):
@@ -64,11 +103,39 @@ def calculate_saldo(
     account_column=ACCOUNT_COLUMN,
     counteraccount_column=COUNTERACCOUNT_COLUMN,
 ):
+    return analyze_saldo(
+        source,
+        encoding=encoding,
+        amount_column=amount_column,
+        side_column=side_column,
+        account_column=account_column,
+        counteraccount_column=counteraccount_column,
+        target_counteraccount=None,
+    ).saldo_tuple()
+
+
+def analyze_saldo(
+    source,
+    *,
+    encoding,
+    target_counteraccount=DEFAULT_TARGET_COUNTERACCOUNT,
+    amount_column=AMOUNT_COLUMN,
+    side_column=SIDE_COLUMN,
+    account_column=ACCOUNT_COLUMN,
+    counteraccount_column=COUNTERACCOUNT_COLUMN,
+    document_date_column=DOCUMENT_DATE_COLUMN,
+):
     # The S/H flag applies to Konto. A file must represent one Konto so its
     # movement can be checked as S minus H without mixing different accounts.
     account_totals = {"S": Decimal("0"), "H": Decimal("0")}
     counts = {"S": 0, "H": 0}
     accounts = set()
+    counteraccount_entries = []
+
+    if target_counteraccount is not None:
+        target_counteraccount = target_counteraccount.strip()
+        if not target_counteraccount:
+            raise ValueError("Das zu prüfende Gegenkonto darf nicht leer sein.")
 
     with open_csv_source(source, encoding) as csv_file:
         reader = csv.reader(csv_file, delimiter=";", strict=True)
@@ -81,14 +148,18 @@ def calculate_saldo(
                 "Die CSV-Datei enthält keine Metadaten- und Kopfzeile."
             ) from exc
 
+        required_columns = [
+            amount_column,
+            side_column,
+            account_column,
+            counteraccount_column,
+        ]
+        if target_counteraccount is not None:
+            required_columns.append(document_date_column)
+
         missing_columns = [
             column
-            for column in (
-                amount_column,
-                side_column,
-                account_column,
-                counteraccount_column,
-            )
+            for column in required_columns
             if column not in header
         ]
         if missing_columns:
@@ -98,12 +169,16 @@ def calculate_saldo(
         side_index = header.index(side_column)
         account_index = header.index(account_column)
         counteraccount_index = header.index(counteraccount_column)
-        required_index = max(
+        required_indices = [
             amount_index,
             side_index,
             account_index,
             counteraccount_index,
-        )
+        ]
+        if target_counteraccount is not None:
+            document_date_index = header.index(document_date_column)
+            required_indices.append(document_date_index)
+        required_index = max(required_indices)
 
         for line_number, row in enumerate(reader, start=3):
             if not row or not any(cell.strip() for cell in row):
@@ -122,13 +197,30 @@ def calculate_saldo(
             if not account:
                 raise ValueError(f"Leeres Konto in CSV-Zeile {line_number}.")
 
-            if not row[counteraccount_index].strip():
+            counteraccount = row[counteraccount_index].strip()
+            if not counteraccount:
                 raise ValueError(f"Leeres Gegenkonto in CSV-Zeile {line_number}.")
 
             amount = parse_amount(row[amount_index], line_number=line_number)
             accounts.add(account)
             account_totals[side] += amount
             counts[side] += 1
+
+            if (
+                target_counteraccount is not None
+                and counteraccount == target_counteraccount
+            ):
+                document_date = row[document_date_index].strip()
+                if not document_date:
+                    raise ValueError(
+                        f"Leeres Belegdatum in CSV-Zeile {line_number}."
+                    )
+                counteraccount_entries.append(
+                    CounteraccountEntry(
+                        document_date=document_date,
+                        amount=amount,
+                    )
+                )
 
     if not accounts:
         raise ValueError("Die CSV-Datei enthält keine Buchungen.")
@@ -138,12 +230,13 @@ def calculate_saldo(
             "ein gemeinsamer Saldo wäre nicht eindeutig."
         )
 
-    return (
-        next(iter(accounts)),
-        account_totals["S"],
-        account_totals["H"],
-        counts["S"],
-        counts["H"],
+    return SaldoAnalysis(
+        account=next(iter(accounts)),
+        account_s_total=account_totals["S"],
+        account_h_total=account_totals["H"],
+        s_count=counts["S"],
+        h_count=counts["H"],
+        counteraccount_entries=tuple(counteraccount_entries),
     )
 
 
@@ -188,5 +281,17 @@ def is_collection_input(input_path):
 def sum_saldos(results):
     total = Decimal("0")
     for result in results:
-        total += result[1] - result[2]
+        if isinstance(result, SaldoAnalysis):
+            total += result.saldo
+        else:
+            total += result[1] - result[2]
     return total
+
+
+def sum_counteraccount_entries(results):
+    total = Decimal("0")
+    count = 0
+    for result in results:
+        total += result.counteraccount_total
+        count += len(result.counteraccount_entries)
+    return total, count

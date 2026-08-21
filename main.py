@@ -11,10 +11,12 @@ import zipfile
 from pathlib import Path
 
 from core import (
-    calculate_saldo,
+    DEFAULT_TARGET_COUNTERACCOUNT,
+    analyze_saldo,
     find_csv_files,
     is_collection_input,
     source_label,
+    sum_counteraccount_entries,
     sum_saldos,
 )
 
@@ -48,6 +50,14 @@ def build_parser():
         help="Dateikodierung (Standard: iso-8859-1)",
     )
     parser.add_argument(
+        "--gegenkonto",
+        default=DEFAULT_TARGET_COUNTERACCOUNT,
+        help=(
+            "Gegenkonto, dessen Umsätze und Belegdaten ausgegeben werden "
+            f"(Standard: {DEFAULT_TARGET_COUNTERACCOUNT})"
+        ),
+    )
+    parser.add_argument(
         "--gui",
         action="store_true",
         help="Einfache grafische Oberfläche zum Auswählen von Pfad und Spalten",
@@ -55,26 +65,30 @@ def build_parser():
     return parser
 
 
-def print_result(path, result):
-    (
-        account,
-        account_s_total,
-        account_h_total,
-        s_count,
-        h_count,
-    ) = result
-    saldo = account_s_total - account_h_total
+def print_result(path, result, target_counteraccount):
+    saldo = result.saldo
     print(f"Datei: {source_label(path)}")
-    print(f"Konto: {account}")
+    print(f"Konto: {result.account}")
     print(
-        f"Konto-Summe S ({s_count} Buchungen): "
-        f"{account_s_total:.2f} EUR"
+        f"Konto-Summe S ({result.s_count} Buchungen): "
+        f"{result.account_s_total:.2f} EUR"
     )
     print(
-        f"Konto-Summe H ({h_count} Buchungen): "
-        f"{account_h_total:.2f} EUR"
+        f"Konto-Summe H ({result.h_count} Buchungen): "
+        f"{result.account_h_total:.2f} EUR"
     )
     print(f"Saldo (S - H): {saldo:.2f} EUR")
+    print(f"Gegenkonto {target_counteraccount}:")
+    for entry in result.counteraccount_entries:
+        print(
+            f"  Belegdatum: {entry.document_date} | "
+            f"Umsatz: {entry.amount:.2f} EUR"
+        )
+    print(
+        f"Gegenkonto-Summe {target_counteraccount} "
+        f"({len(result.counteraccount_entries)} Buchungen): "
+        f"{result.counteraccount_total:.2f} EUR"
+    )
 
     if saldo == 0:
         print(f"Prüfung: OK — Saldo = {saldo:.2f} EUR")
@@ -91,6 +105,14 @@ def main():
         from ui import run_gui
 
         return run_gui()
+
+    args.gegenkonto = args.gegenkonto.strip()
+    if not args.gegenkonto:
+        print(
+            "Fehler: Das zu prüfende Gegenkonto darf nicht leer sein.",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         files = find_csv_files(args.input_path)
@@ -110,7 +132,11 @@ def main():
         if index:
             print()
         try:
-            result = calculate_saldo(path, encoding=args.encoding)
+            result = analyze_saldo(
+                path,
+                encoding=args.encoding,
+                target_counteraccount=args.gegenkonto,
+            )
         except (
             OSError,
             UnicodeError,
@@ -123,13 +149,21 @@ def main():
             continue
 
         results.append(result)
-        if not print_result(path, result):
+        if not print_result(path, result, args.gegenkonto):
             has_imbalance = True
 
     if is_collection:
         total_saldo = sum_saldos(results)
+        counteraccount_total, counteraccount_count = (
+            sum_counteraccount_entries(results)
+        )
         print()
         print(f"Summe aller Saldo: {total_saldo:.2f} EUR")
+        print(
+            f"Gesamtsumme Gegenkonto {args.gegenkonto} "
+            f"({counteraccount_count} Buchungen): "
+            f"{counteraccount_total:.2f} EUR"
+        )
         if total_saldo == 0 and not has_error:
             print(
                 f"Gesamtprüfung: OK — Summe aller Saldo = "
